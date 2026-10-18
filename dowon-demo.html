@@ -1,0 +1,901 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>도원 택배 상하차</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 물류센터 작업판. 왼쪽 열은 근무 현황판 + 현장(캔버스) + 조작, 오른쪽 열은 조절 변수 · 05 감액 검증 · 근무 기록. 좁으면 한 열. */
+:root {
+  --bg: #e9ecee;
+  --panel: #f6f7f8;
+  --ink: #15191d;
+  --muted: #59636b;
+  --line: #c7cdd2;
+  --tape: #f2b705;
+  --tape-ink: #1d1700;
+  --floor: #dde2e5;
+  --floor-grid: #d0d6da;
+  --bay: #c9d0d5;
+  --shelf: #8d969d;
+  --slot: #f4f5f6;
+  --truck: #3a4148;
+  --d0: #2f6bd3;
+  --d1: #e07b22;
+  --d2: #24966a;
+  --good: #1d8a4c;
+  --bad: #c9372c;
+  --warn: #c99500;
+  --worker: #1f2a33;
+  --focus: #1b5fd1;
+  --f-display: "Barlow Condensed", "Noto Sans KR", sans-serif;
+  --f-body: "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121518; --panel: #1a1e22; --ink: #e9edf0; --muted: #9aa5ad; --line: #2e353b;
+    --floor: #20252a; --floor-grid: #262c31; --bay: #2b3238; --shelf: #4b545b; --slot: #2a3036; --truck: #7d8892;
+    --d0: #5b92f0; --d1: #f39a4a; --d2: #45bd8d;
+    --good: #47c47e; --bad: #ff6a5c; --warn: #f0c03a; --worker: #e9edf0; --focus: #7fb0ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121518; --panel: #1a1e22; --ink: #e9edf0; --muted: #9aa5ad; --line: #2e353b;
+  --floor: #20252a; --floor-grid: #262c31; --bay: #2b3238; --shelf: #4b545b; --slot: #2a3036; --truck: #7d8892;
+  --d0: #5b92f0; --d1: #f39a4a; --d2: #45bd8d;
+  --good: #47c47e; --bad: #ff6a5c; --warn: #f0c03a; --worker: #e9edf0; --focus: #7fb0ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 20px; border-bottom: 3px solid var(--ink); padding-bottom: 10px; }
+header .tape { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; background: repeating-linear-gradient(-45deg, var(--tape) 0 10px, var(--tape-ink) 10px 20px); color: transparent; width: 64px; height: 14px; align-self: center; }
+h1 { font-family: var(--f-display); font-size: 40px; line-height: 1; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 62ch; }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); padding: 14px; min-width: 0; }
+.panel h2 { font-family: var(--f-display); font-size: 22px; margin: 0 0 2px; letter-spacing: .01em; }
+.panel .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+
+/* HUD */
+.hud { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--panel); }
+.hud > div { padding: 8px 10px; border-left: 1px solid var(--line); min-width: 0; }
+.hud > div:first-child { border-left: none; }
+.hud .k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hud .v { font-family: var(--f-display); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hud .v.bad { color: var(--bad); } .hud .v.good { color: var(--good); }
+@media (max-width: 640px) { .hud { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hud > div:nth-child(4) { border-left: none; } .hud > div:nth-child(n+4) { border-top: 1px solid var(--line); } }
+
+.stage { position: relative; border: 1px solid var(--line); background: var(--floor); }
+canvas { display: block; width: 100%; height: auto; touch-action: none; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 62%, transparent); padding: 12px; overflow: auto; }
+.card { background: var(--panel); border: 2px solid var(--ink); padding: 18px 20px; max-width: 460px; width: 100%; box-shadow: 6px 6px 0 var(--ink); }
+@media (max-width: 700px) { .overlay { position: static; background: var(--bg); padding: 10px; } .card { box-shadow: none; max-width: none; } }
+.card h3 { font-family: var(--f-display); font-size: 28px; margin: 0 0 6px; line-height: 1.05; }
+.card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.card table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+.card td { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.card td:last-child { text-align: right; font-family: var(--f-mono); }
+.card tr.total td { border-bottom: none; border-top: 2px solid var(--ink); font-weight: 700; font-size: 15px; padding-top: 6px; }
+.notice { border-left: 4px solid var(--tape); background: color-mix(in srgb, var(--tape) 14%, var(--panel)); padding: 8px 10px; font-size: 12.5px; margin: 0 0 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+button { font: inherit; cursor: pointer; }
+.btn { background: var(--ink); color: var(--bg); border: 2px solid var(--ink); padding: 8px 16px; font-weight: 700; }
+.btn.ghost { background: transparent; color: var(--ink); }
+.btn:focus-visible, .key:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
+kbd { font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; padding: 0 5px; background: var(--panel); color: var(--ink); }
+.pad { display: none; gap: 10px; align-items: center; }
+.dpad { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); gap: 4px; }
+.key { background: var(--panel); border: 1px solid var(--line); font-size: 16px; color: var(--ink); user-select: none; -webkit-user-select: none; touch-action: none; }
+.act { width: 92px; height: 92px; border-radius: 50%; background: var(--tape); color: var(--tape-ink); border: 3px solid var(--ink); font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none; }
+@media (pointer: coarse) { .pad { display: flex; } }
+.pad.show { display: flex; }
+
+.held { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.sw { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--ink); vertical-align: -1px; }
+
+/* params */
+.params { display: grid; gap: 10px; }
+.param { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+.param label { font-size: 13px; font-weight: 500; }
+.param output, .param .val { font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.param input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--ink); }
+.param select { grid-column: 1 / -1; width: 100%; font: inherit; font-size: 13px; padding: 5px 6px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.param .hint { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
+.pending { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.pending.on { color: var(--ink); }
+
+/* sim */
+.sim { display: grid; gap: 8px; }
+.simrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12.5px; }
+.simrow .nm { font-weight: 500; }
+.simrow .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.simrow .f { grid-column: 1 / -1; color: var(--muted); font-family: var(--f-mono); font-size: 11.5px; }
+.bar { grid-column: 1 / -1; position: relative; height: 10px; background: var(--bg); border: 1px solid var(--line); }
+.bar i { position: absolute; top: 0; bottom: 0; }
+.bar b { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+.verdict { font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--line); background: var(--bg); }
+.verdict strong { font-family: var(--f-mono); }
+
+table.hist { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.hist th, table.hist td { padding: 4px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+table.hist th:first-child, table.hist td:first-child { text-align: left; }
+table.hist th { font-weight: 500; color: var(--muted); font-size: 11px; }
+.histwrap { overflow-x: auto; }
+.empty { color: var(--muted); font-size: 12.5px; }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border: 1px solid var(--line); background: var(--panel); }
+.rules div { padding: 10px 12px; border-left: 1px solid var(--line); border-top: 1px solid var(--line); margin: -1px 0 0 -1px; font-size: 12.5px; min-width: 0; }
+.rules .id { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.rules strong { display: block; font-size: 13px; }
+footer { color: var(--muted); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">inZOI ModKit 직업 모드 · PRD v1.0 규칙 시뮬레이션</div>
+      <h1>도원 택배 상하차</h1>
+    </div>
+    <span class="tape" aria-hidden="true">tape</span>
+    <p>상자의 행선지(색)와 크기를 보고 맞는 선반의 맞는 칸에 쌓는 8시간 일당직입니다. 트럭은 06:00과 18:00에 선반을 비우고, 그때 오배송이 감액됩니다.</p>
+  </header>
+
+  <div class="grid">
+    <main style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <div class="hud" aria-live="off">
+        <div><div class="k">현재 시각</div><div class="v" id="hClock">14:00</div></div>
+        <div><div class="k">남은 근무</div><div class="v" id="hLeft">8:00</div></div>
+        <div><div class="k">다음 트럭</div><div class="v" id="hTruck">18:00</div></div>
+        <div><div class="k">정상 배송</div><div class="v" id="hOk">0</div></div>
+        <div><div class="k">출고 예정 감액</div><div class="v" id="hPend">0</div></div>
+        <div><div class="k">현재 일당</div><div class="v" id="hPay">0</div></div>
+      </div>
+
+      <div class="stage" id="stage">
+        <canvas id="cv" width="960" height="560" role="img" aria-label="위에서 본 택배 분류장. 왼쪽에 상자 무더기, 오른쪽에 행선지별 선반, 위쪽에 출고 트럭이 있다."></canvas>
+        <div class="overlay" id="ov"></div>
+      </div>
+
+      <div class="controls">
+        <div class="held" id="held">손: 비어 있음</div>
+        <div class="legend">
+          <span><kbd>WASD</kbd>/<kbd>방향키</kbd> 이동</span>
+          <span><kbd>E</kbd>/<kbd>Space</kbd> 들기·놓기</span>
+          <span><kbd>P</kbd> 일시정지</span>
+          <span>화면 클릭: 그 위치로 걷기</span>
+        </div>
+        <div class="row">
+          <button type="button" class="btn ghost" id="bPause">일시정지</button>
+          <button type="button" class="btn ghost" id="bLeave">퇴근하기</button>
+          <button type="button" class="btn ghost" id="bPad">터치 패드</button>
+        </div>
+      </div>
+      <div class="pad" id="pad">
+        <div class="dpad">
+          <span></span><button type="button" class="key" data-k="up" aria-label="위로">▲</button><span></span>
+          <button type="button" class="key" data-k="left" aria-label="왼쪽으로">◀</button><span></span><button type="button" class="key" data-k="right" aria-label="오른쪽으로">▶</button>
+          <span></span><button type="button" class="key" data-k="down" aria-label="아래로">▼</button><span></span>
+        </div>
+        <button type="button" class="act" id="bAct">들기<br>놓기</button>
+      </div>
+
+      <section aria-labelledby="tRules">
+        <h2 id="tRules" class="eyebrow" style="margin:6px 0 6px">이 데모가 따르는 PRD 규칙</h2>
+        <div class="rules">
+          <div><span class="id">R8 · 07-1 · 07-4</span><strong>맞는 칸에 놓으면 즉시 +보수</strong>행선지와 크기가 모두 맞으면 보수를 받고 상자가 고정됩니다. 다시 들 수 없습니다.</div>
+          <div><span class="id">R8 예외</span><strong>행선지가 틀리면 빨강</strong>보수 없음. 트럭 출발 전에 옮기면 손해 없음, 남아 있으면 출발 때 감액이 확정됩니다.</div>
+          <div><span class="id">R8 예외</span><strong>크기만 틀리면 노랑 · 반값</strong>감액은 없고, 트럭이 출발할 때 단가의 절반을 받습니다. 출발 전에 맞는 칸으로 옮기면 전액을 받습니다.</div>
+          <div><span class="id">R8 예외</span><strong>칸이 가득 차면 놓을 수 없음</strong>다음 트럭이 칸을 비울 때까지 바닥이나 무더기에 둡니다. 바닥은 판정하지 않습니다.</div>
+          <div><span class="id">R9 · 07-3</span><strong>트럭 출발 = 선반 비우기</strong>손에 든 상자는 실리지 않습니다. 출발 직전의 마지막 점검이 핵심입니다.</div>
+          <div><span class="id">07-7 · 07-8</span><strong>8시간 후 퇴근</strong>든 상자는 무더기로 돌아갑니다. 근무 뒤 첫 트럭의 결과는 알림으로 정산합니다.</div>
+        </div>
+      </section>
+    </main>
+
+    <aside style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <section class="panel" aria-labelledby="tParams">
+        <h2 id="tParams">조절 변수</h2>
+        <p class="sub">PRD 04의 변수입니다. 바꾼 값은 다음 출근부터 적용되고, 아래 05 검증은 바로 다시 계산됩니다.</p>
+        <div class="params">
+          <div class="param"><label for="pStart">출근 시각</label><span class="val" id="vStart"></span>
+            <select id="pStart"></select><span class="hint">트럭 시각이 근무 시간에 들어가는 시간대에 표시가 붙습니다 (07-8 안 B, 후속 검토용).</span></div>
+          <div class="param"><label for="pP">상자당 단가 p</label><output id="vP"></output><input type="range" id="pP" min="5" max="100" step="1" value="25"><span class="hint">하루 최대 약 700에 맞춘 값입니다 (PRD 05-3). P4를 켜면 기준 운임 p₀로 쓰이고, PRD 값은 17입니다.</span></div>
+          <div class="param"><label for="pD">오배송 감액 d</label><output id="vD"></output><input type="range" id="pD" min="0" max="100" step="1" value="25"></div>
+          <div class="param"><label for="pHalf">크기 틀림 지급률</label><output id="vHalf"></output><input type="range" id="pHalf" min="0" max="75" step="5" value="50"></div>
+          <div class="param"><label for="pCap">칸 용량</label><output id="vCap"></output><input type="range" id="pCap" min="3" max="14" step="1" value="10"></div>
+          <div class="param"><label for="pP4"><input type="checkbox" id="pP4"> P4 확장 켜기</label><span class="val"></span><span class="hint">운임 차등(블리스베이 1.7배 · 큰 상자 1.2배)과 무게 감속(작은 −5% · 큰 −30%)을 적용합니다. 오배송 감액은 같은 크기의 최고 운임이 됩니다. 차하야 계수는 PRD에 없어 데모 임시값 2.0입니다.</span></div>
+          <div class="param"><label for="pN">행선지 수 N</label><span class="val" id="vN"></span>
+            <select id="pN"><option value="2" selected>2곳 · 도원, 블리스베이</option><option value="3">3곳 · 차하야 추가 (R7)</option></select></div>
+          <div class="param"><label for="pK">선반 칸 종류 K</label><span class="val" id="vK"></span>
+            <select id="pK"><option value="2" selected>2종 · 작은 상자, 큰 상자</option><option value="3">3종 · 중간 상자 추가 (R7)</option></select></div>
+          <div class="param"><label for="pPile">무더기 크기</label><output id="vPile"></output><input type="range" id="pPile" min="4" max="10" step="1" value="6"></div>
+          <div class="param"><label for="pResp">무더기 재생성 간격 (게임 분)</label><output id="vResp"></output><input type="range" id="pResp" min="10" max="120" step="5" value="30"></div>
+          <div class="param"><label for="pMove">캐릭터 이동 속도</label><output id="vMove"></output><input type="range" id="pMove" min="3" max="9" step="0.5" value="6"><span class="hint">바닥 격자 1칸 = 40px. 기본 초당 6칸입니다.</span></div>
+          <div class="param"><label for="pTrucks">트럭 출발 횟수</label><span class="val" id="vTrucks"></span>
+            <select id="pTrucks"><option value="1">하루 1회 · 18:00</option><option value="2" selected>하루 2회 · 06:00, 18:00</option><option value="3">하루 3회 · 06:00, 14:00, 22:00</option></select></div>
+          <div class="param"><label for="pSpeed">게임 1시간 = 실제 몇 초</label><output id="vSpeed"></output><input type="range" id="pSpeed" min="10" max="60" step="5" value="20"><span class="hint">데모용 시간 배율입니다. 기본 20초면 8시간 근무가 약 2분 40초입니다.</span></div>
+        </div>
+        <div class="pending" id="pending">현재 근무에 적용된 값과 같습니다.</div>
+      </section>
+
+      <section class="panel" aria-labelledby="tSim">
+        <h2 id="tSim">05 감액 검증</h2>
+        <p class="sub">확인을 건너뛰는 플레이어가 상자 1개당 평균 얼마를 버는지, 공식과 무작위 2만 회 시뮬레이션으로 비교합니다.</p>
+        <div class="sim" id="sim"></div>
+        <div class="row" style="margin-top:10px"><button type="button" class="btn ghost" id="bSim">다시 돌리기</button></div>
+      </section>
+
+      <section class="panel" aria-labelledby="tBal">
+        <h2 id="tBal">상자 수급 균형</h2>
+        <p class="sub">이동 속도로 정해지는 처리량과, 무더기 크기·재생성 간격으로 정해지는 공급량을 비교합니다.</p>
+        <div class="sim" id="bal"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="tHist">
+        <h2 id="tHist">근무 기록</h2>
+        <p class="sub">설정을 바꿔 가며 일당을 비교해 보세요. 이 브라우저에만 저장됩니다.</p>
+        <div class="histwrap" id="hist"></div>
+      </section>
+    </aside>
+  </div>
+  <footer>PRD v1.1 기준 규칙 시뮬레이션 · 시간 배율(게임 1시간 = 실제 20초)과 이동 속도는 데모용 임시값입니다.</footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+const W = 960, H = 560;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const css = getComputedStyle(document.documentElement);
+const tok = n => css.getPropertyValue(n).trim();
+
+const DEST = [
+  { name: '도원', tag: '도시 내 배달', short: '도', col: '--d0' },
+  { name: '블리스베이', tag: '해외 배송', short: '블', col: '--d1' },
+  { name: '차하야', tag: '확장 행선지', short: '차', col: '--d2' },
+];
+const SIZE = {
+  S: { name: '작은 상자', px: 18 },
+  M: { name: '중간 상자', px: 24 },
+  L: { name: '큰 상자', px: 30 },
+};
+const FARE_A = [1, 1.7, 2.0], FARE_B = { S: 1, M: 1.1, L: 1.2 }, SLOW = { S: 0.05, M: 0.15, L: 0.30 };
+const TRUCKS = { 1: [1080], 2: [360, 1080], 3: [360, 840, 1320] };
+const PILE = { x: 150, y: 335, r: 92 };
+const BAY_H = 86;
+const PLAYER_R = 14, GRID = 40, REACH_SLOT = 30, REACH_BOX = 40;
+
+/* ---------- config ---------- */
+const inputs = ['pStart','pP','pD','pN','pK','pPile','pResp','pTrucks','pSpeed','pMove','pHalf','pCap','pP4'];
+function readCfg() {
+  return {
+    start: +$('pStart').value, p: +$('pP').value, d: +$('pD').value, N: +$('pN').value, K: +$('pK').value,
+    pile: +$('pPile').value, respawn: +$('pResp').value, trucks: +$('pTrucks').value, secPerHour: +$('pSpeed').value, move: +$('pMove').value, half: +$('pHalf').value, cap: +$('pCap').value, p4: $('pP4').checked,
+  };
+}
+const pad2 = n => String(n).padStart(2, '0');
+const fmt = t => { t = ((Math.floor(t) % 1440) + 1440) % 1440; return pad2(Math.floor(t / 60)) + ':' + pad2(t % 60); };
+const won = v => (v < 0 ? '−' : '') + Math.abs(Math.round(v)).toLocaleString('ko-KR');
+
+function trucksInShift(start, n) {
+  const s = start * 60, e = s + 480, out = [];
+  for (const T of TRUCKS[n]) for (const m of [0, 1]) { const k = T + 1440 * m; if (k > s && k <= e) out.push(k); }
+  return out.sort((a, b) => a - b);
+}
+function fillStartOptions() {
+  const sel = $('pStart'), n = +$('pTrucks').value, cur = sel.value === '' ? 14 : +sel.value;
+  sel.innerHTML = '';
+  for (let h = 0; h < 24; h++) {
+    const ts = trucksInShift(h, n);
+    const o = document.createElement('option');
+    o.value = h;
+    o.textContent = pad2(h) + ':00 – ' + pad2((h + 8) % 24) + ':00' + (ts.length ? '  · 트럭 ' + ts.map(fmt).join(', ') : '  · 트럭 없음');
+    if (h === cur) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+/* ---------- world ---------- */
+let cfg = null, S = null, nextId = 1;
+function sizesFor(K) { return K === 3 ? ['S', 'M', 'L'] : ['S', 'L']; }
+function buildShelves(N, K) {
+  const xs = N === 3 ? [500, 650, 800] : [560, 760];
+  const shelves = [], slots = [];
+  const sizes = sizesFor(K);
+  for (let i = 0; i < N; i++) {
+    const sh = { x: xs[i], y: 138, w: 112, h: 336, dest: i };
+    shelves.push(sh);
+    const top = sh.y + 30, slotH = (sh.h - 34) / sizes.length;
+    sizes.forEach((sz, j) => {
+      slots.push({ dest: i, size: sz, x: sh.x + 5, y: top + j * slotH + 2, w: sh.w - 10, h: slotH - 6, boxes: [] });
+    });
+  }
+  return { shelves, slots };
+}
+function newRun() {
+  cfg = readCfg();
+  const { shelves, slots } = buildShelves(cfg.N, cfg.K);
+  S = {
+    running: false, paused: false, over: false,
+    t: cfg.start * 60, tStart: cfg.start * 60, tEnd: cfg.start * 60 + 480,
+    player: { x: 330, y: 335, fx: 1, fy: 0 }, target: null, stuck: 0,
+    held: null, boxes: [], shelves, slots,
+    money: 0, okCount: 0, judged: 0, judgedOk: 0,
+    wait: 0, halfPaid: 0, penalty: 0, wdShipped: 0, wsShipped: 0, okShipped: 0, departures: [],
+    nextRespawn: cfg.start * 60 + cfg.respawn, popups: [], truckAnim: 0, truckLoad: 0,
+  };
+  refillPile();
+  updatePending();
+}
+function randInt(n) { return Math.floor(Math.random() * n); }
+function pileCount() { return S.boxes.filter(b => b.state === 'pile').length; }
+function refillPile() {
+  const sizes = sizesFor(cfg.K);
+  let added = 0;
+  while (pileCount() < cfg.pile) {
+    let x = PILE.x, y = PILE.y;
+    for (let tries = 0; tries < 30; tries++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (PILE.r - 22);
+      x = PILE.x + Math.cos(a) * r; y = PILE.y + Math.sin(a) * r;
+      if (S.boxes.every(b => b.state !== 'pile' || Math.hypot(b.x - x, b.y - y) > 30)) break;
+    }
+    S.boxes.push({ id: nextId++, dest: randInt(cfg.N), size: sizes[randInt(sizes.length)], x, y, state: 'pile', judged: null, fixed: false });
+    added++;
+  }
+  return added;
+}
+
+/* ---------- geometry ---------- */
+function distRect(px, py, r) {
+  const dx = Math.max(r.x - px, 0, px - (r.x + r.w)), dy = Math.max(r.y - py, 0, py - (r.y + r.h));
+  return Math.hypot(dx, dy);
+}
+function hitsShelf(x, y) {
+  return S.shelves.some(s => x + PLAYER_R > s.x && x - PLAYER_R < s.x + s.w && y + PLAYER_R > s.y && y - PLAYER_R < s.y + s.h);
+}
+function clampWorld(x, y) {
+  return [Math.min(W - PLAYER_R - 6, Math.max(PLAYER_R + 6, x)), Math.min(H - PLAYER_R - 6, Math.max(BAY_H + PLAYER_R + 4, y))];
+}
+function nearestSlot() {
+  let best = null, bd = REACH_SLOT;
+  for (const s of S.slots) { const d = distRect(S.player.x, S.player.y, s); if (d <= bd) { bd = d; best = s; } }
+  return best;
+}
+
+/* ---------- actions ---------- */
+function popup(x, y, text, kind) { S.popups.push({ x, y, text, kind, life: 1.8 }); }
+function act() {
+  if (!S || !S.running || S.paused) return;
+  const slot = nearestSlot();
+  if (S.held) {
+    if (slot) placeInSlot(S.held, slot); else dropFloor(S.held);
+    return;
+  }
+  // pick: nearest loose box or top unfixed box in nearby slot
+  let best = null, bd = Infinity;
+  for (const b of S.boxes) {
+    if (b.state !== 'pile' && b.state !== 'floor') continue;
+    const d = Math.hypot(b.x - S.player.x, b.y - S.player.y);
+    if (d <= REACH_BOX && d < bd) { bd = d; best = { b }; }
+  }
+  if (slot) {
+    const loose = slot.boxes.filter(b => !b.fixed);
+    const d = distRect(S.player.x, S.player.y, slot);
+    if (loose.length && d < bd) { best = { b: loose[loose.length - 1], slot }; bd = d; }
+  }
+  if (!best) {
+    if (slot && slot.boxes.length) popup(S.player.x, S.player.y - 26, '맞게 놓인 상자는 고정됨', 'info');
+    else popup(S.player.x, S.player.y - 26, '닿는 상자가 없음', 'info');
+    return;
+  }
+  const b = best.b;
+  if (best.slot) best.slot.boxes.splice(best.slot.boxes.indexOf(b), 1);
+  b.state = 'held'; b.judged = null; S.held = b;
+  updateHeld();
+}
+function placeInSlot(b, slot) {
+  if (slot.boxes.length >= cfg.cap) {
+    popup(slot.x + slot.w / 2, slot.y + 12, '가득 참', 'warn');
+    return;
+  }
+  slot.boxes.push(b); b.state = 'shelf'; S.held = null; S.judged++;
+  const cx = slot.x + slot.w / 2, cy = slot.y + 12;
+  if (b.dest === slot.dest && b.size === slot.size) {
+    b.judged = 'ok'; b.fixed = true; S.money += price(b); S.okCount++; S.judgedOk++;
+    popup(cx, cy, '정상 배송 +' + won(price(b)), 'ok');
+  } else if (b.dest !== slot.dest) {
+    b.judged = 'wrongDest';
+    popup(cx, cy, '행선지 틀림 · 출고 때 −' + won(penaltyOf(b)), 'bad');
+  } else {
+    b.judged = 'wrongSize';
+    popup(cx, cy, '크기 틀림 · 출고 때 +' + won(halfOf(b)), 'warn');
+  }
+  updateHeld();
+}
+function dropFloor(b) {
+  let [x, y] = clampWorld(S.player.x + S.player.fx * 24, S.player.y + S.player.fy * 24);
+  if (hitsShelf(x, y)) { x = S.player.x; y = S.player.y; }
+  b.x = x; b.y = y;
+  b.state = Math.hypot(x - PILE.x, y - PILE.y) < PILE.r ? 'pile' : 'floor';
+  S.held = null;
+  if (b.state === 'floor') popup(x, y - 22, '바닥 · 판정 없음', 'info');
+  updateHeld();
+}
+function depart(k) {
+  let ok = 0, wd = 0, ws = 0, pen = 0, hp = 0;
+  for (const s of S.slots) {
+    for (const b of s.boxes) {
+      if (b.judged === 'ok') ok++; else if (b.judged === 'wrongDest') { wd++; pen += penaltyOf(b); } else { ws++; hp += halfOf(b); }
+      S.boxes.splice(S.boxes.indexOf(b), 1);
+    }
+    s.boxes = [];
+  }
+  S.money += hp; S.halfPaid += hp;
+  S.penalty += pen; S.wdShipped += wd; S.wsShipped += ws; S.okShipped += ok;
+  S.departures.push({ k, ok, wd, ws, pen });
+  S.truckAnim = 2.4; S.truckLoad = ok + wd + ws;
+  popup(745, 54, fmt(k) + ' 트럭 출발 · ' + (ok + wd + ws) + '상자' + (wd ? ' · 오배송 −' + won(pen) : '') + (hp ? ' · 반값 +' + won(hp) : ''), wd ? 'bad' : 'ok');
+}
+function endShift(early) {
+  if (!S.running) return;
+  S.running = false; S.over = true; keys.clear(); S.target = null;
+  if (S.held) {
+    const b = S.held; b.state = 'pile'; b.x = PILE.x + (Math.random() - .5) * 60; b.y = PILE.y + (Math.random() - .5) * 60; S.held = null;
+  }
+  // 07-8 안 A: 근무 뒤 첫 트럭 결과
+  let after = null;
+  const onShelf = S.slots.flatMap(s => s.boxes);
+  if (onShelf.length) {
+    const ts = [];
+    for (const T of TRUCKS[cfg.trucks]) for (const m of [0, 1, 2]) ts.push(T + 1440 * m);
+    const k = ts.filter(x => x > S.t).sort((a, b) => a - b)[0];
+    const wd = onShelf.filter(b => b.judged === 'wrongDest').length;
+    const ws = onShelf.filter(b => b.judged === 'wrongSize').length;
+    after = { k, n: onShelf.length, wd, ws, pen: onShelf.filter(b => b.judged === 'wrongDest').reduce((a, b) => a + penaltyOf(b), 0), half: onShelf.filter(b => b.judged === 'wrongSize').reduce((a, b) => a + halfOf(b), 0) };
+  }
+  const worked = Math.round(S.t - S.tStart);
+  const day = S.money - S.penalty - (after ? after.pen - after.half : 0);
+  const rec = {
+    start: fmt(S.tStart), worked, ok: S.okCount, wd: S.wdShipped + (after ? after.wd : 0), day,
+    set: (cfg.p4 ? 'P4 ' : '') + 'p' + cfg.p + '/d' + cfg.d + '/N' + cfg.N + '/K' + cfg.K, acc: S.judged ? Math.round(S.judgedOk / S.judged * 100) : 0,
+  };
+  history.unshift(rec); history = history.slice(0, 12); saveHist(); renderHist();
+  showResult(early, worked, after, day);
+  updateHeld();
+}
+
+/* ---------- input ---------- */
+const keys = new Set();
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+addEventListener('keydown', e => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'SELECT') return;
+  if (KEYMAP[e.code]) { keys.add(KEYMAP[e.code]); if (S) S.target = null; e.preventDefault(); }
+  else if ((e.code === 'KeyE' || e.code === 'Space') && !e.repeat) {
+    if (tag === 'BUTTON' && e.code === 'Space') return;
+    act(); e.preventDefault();
+  } else if (e.code === 'KeyP') togglePause();
+});
+addEventListener('keyup', e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
+addEventListener('blur', () => keys.clear());
+document.querySelectorAll('.key').forEach(k => {
+  const d = k.dataset.k;
+  k.addEventListener('pointerdown', e => { e.preventDefault(); keys.add(d); if (S) S.target = null; k.setPointerCapture(e.pointerId); });
+  const up = () => keys.delete(d);
+  k.addEventListener('pointerup', up); k.addEventListener('pointercancel', up); k.addEventListener('lostpointercapture', up);
+});
+$('bAct').addEventListener('pointerdown', e => { e.preventDefault(); act(); });
+$('bPad').addEventListener('click', () => $('pad').classList.toggle('show'));
+cv.addEventListener('pointerdown', e => {
+  if (!S || !S.running || S.paused) return;
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  // 플레이어 근처를 누르면 들기·놓기, 멀면 그 위치로 걷기
+  if (Math.hypot(x - S.player.x, y - S.player.y) < 26) { act(); return; }
+  S.target = clampWorld(x, y); S.stuck = 0;
+});
+function togglePause() {
+  if (!S || !S.running) return;
+  S.paused = !S.paused;
+  $('bPause').textContent = S.paused ? '계속하기' : '일시정지';
+  if (S.paused) showPause(); else hideOverlay();
+}
+$('bPause').addEventListener('click', togglePause);
+$('bLeave').addEventListener('click', () => { if (S && S.running) { S.paused = false; $('bPause').textContent = '일시정지'; endShift(true); } });
+
+/* ---------- loop ---------- */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (S) update(dt);
+  draw();
+  hud();
+  requestAnimationFrame(frame);
+}
+function update(dt) {
+  S.popups.forEach(p => p.life -= dt); S.popups = S.popups.filter(p => p.life > 0);
+  if (S.truckAnim > 0) S.truckAnim = Math.max(0, S.truckAnim - dt);
+  if (!S.running || S.paused) return;
+  const P = S.player;
+  let vx = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
+  let vy = (keys.has('down') ? 1 : 0) - (keys.has('up') ? 1 : 0);
+  if (!vx && !vy && S.target) {
+    const dx = S.target[0] - P.x, dy = S.target[1] - P.y, d = Math.hypot(dx, dy);
+    if (d < 5) S.target = null; else { vx = dx / d; vy = dy / d; }
+  }
+  const len = Math.hypot(vx, vy);
+  if (len) {
+    vx /= len; vy /= len; P.fx = vx; P.fy = vy;
+    const ox = P.x, oy = P.y;
+    let [nx] = clampWorld(P.x + vx * cfg.move * GRID * slowK() * dt, P.y);
+    if (!hitsShelf(nx, P.y)) P.x = nx;
+    let [, ny] = clampWorld(P.x, P.y + vy * cfg.move * GRID * slowK() * dt);
+    if (!hitsShelf(P.x, ny)) P.y = ny;
+    if (S.target) { S.stuck = Math.hypot(P.x - ox, P.y - oy) < 0.5 ? S.stuck + dt : 0; if (S.stuck > 0.25) S.target = null; }
+  }
+  const prev = S.t;
+  S.t = Math.min(S.tEnd, S.t + dt * 60 / cfg.secPerHour);
+  if (!S.held && S.boxes.every(b => b.state !== 'pile' && b.state !== 'floor')) S.wait += S.t - prev;
+  for (const k of trucksInShift(cfg.start, cfg.trucks)) if (prev < k && S.t >= k) depart(k);
+  while (S.t >= S.nextRespawn && S.nextRespawn <= S.tEnd) {
+    const n = refillPile();
+    if (n) popup(PILE.x, PILE.y - PILE.r - 8, '새 상자 ' + n + '개', 'info');
+    S.nextRespawn += cfg.respawn;
+  }
+  if (S.t >= S.tEnd) endShift(false);
+}
+
+/* ---------- draw ---------- */
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+function drawBox(x, y, b, opts = {}) {
+  const s = SIZE[b.size].px, c = tok(DEST[b.dest].col);
+  ctx.fillStyle = c; ctx.fillRect(x - s / 2, y - s / 2, s, s);
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2 + .5, y - s / 2 + .5, s - 1, s - 1);
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(x - s / 2 + 2, y - 1, s - 4, 2); // 테이프
+  ctx.fillStyle = '#fff'; ctx.font = '700 ' + Math.round(s * 0.5) + 'px ' + tok('--f-body');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(DEST[b.dest].short, x, y - s * 0.18);
+  if (opts.mark) {
+    ctx.lineWidth = 3; ctx.strokeStyle = tok(opts.mark); ctx.strokeRect(x - s / 2 - 2, y - s / 2 - 2, s + 4, s + 4);
+  }
+  if (opts.hl) { ctx.lineWidth = 2; ctx.strokeStyle = tok('--focus'); ctx.setLineDash([4, 3]); ctx.strokeRect(x - s / 2 - 5, y - s / 2 - 5, s + 10, s + 10); ctx.setLineDash([]); }
+}
+function slotPos(slot, i) {
+  const px = SIZE[slot.size].px, gap = 5;
+  const cols = Math.max(1, Math.floor((slot.w - 8) / (px + gap)));
+  const c = i % cols, r = Math.floor(i / cols);
+  const used = cols * (px + gap) - gap, ox = slot.x + (slot.w - used) / 2 + px / 2;
+  return [ox + c * (px + gap), slot.y + slot.h - 8 - px / 2 - r * (px + gap)];
+}
+function draw() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || W;
+  const need = Math.round(cw * dpr);
+  if (cv.width !== need) { cv.width = need; cv.height = Math.round(need * H / W); }
+  const k = cv.width / W;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  // floor
+  ctx.fillStyle = tok('--floor'); ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = tok('--floor-grid'); ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x + .5, BAY_H); ctx.lineTo(x + .5, H); ctx.stroke(); }
+  for (let y = BAY_H; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); ctx.stroke(); }
+  if (!S) return;
+  // bay
+  ctx.fillStyle = tok('--bay'); ctx.fillRect(0, 0, W, BAY_H);
+  for (let x = -20; x < W; x += 20) {
+    ctx.fillStyle = tok('--tape'); ctx.beginPath(); ctx.moveTo(x, BAY_H); ctx.lineTo(x + 10, BAY_H); ctx.lineTo(x + 18, BAY_H - 8); ctx.lineTo(x + 8, BAY_H - 8); ctx.fill();
+    ctx.fillStyle = tok('--tape-ink'); ctx.beginPath(); ctx.moveTo(x + 10, BAY_H); ctx.lineTo(x + 20, BAY_H); ctx.lineTo(x + 28, BAY_H - 8); ctx.lineTo(x + 18, BAY_H - 8); ctx.fill();
+  }
+  ctx.fillStyle = tok('--muted'); ctx.font = '600 13px ' + tok('--f-mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('출고장  LOADING BAY', 16, 26);
+  ctx.font = '500 12px ' + tok('--f-body');
+  ctx.fillText('트럭 ' + TRUCKS[cfg.trucks].map(fmt).join(' · ') + ' 출발 · 출발 순간 선반이 비워집니다', 16, 46);
+  // truck
+  let off = 0;
+  if (S.truckAnim > 0) { const p = 1 - S.truckAnim / 2.4; off = p < .5 ? (p / .5) ** 2 * 520 : (1 - (p - .5) / .5) * 520; }
+  const tx = 560 + off, ty = 12;
+  ctx.fillStyle = tok('--truck');
+  ctx.fillRect(tx, ty, 270, 52); ctx.fillRect(tx + 274, ty + 14, 58, 38);
+  ctx.fillStyle = tok('--bay'); ctx.fillRect(tx + 290, ty + 20, 34, 14);
+  ctx.fillStyle = tok('--ink'); [tx + 40, tx + 220, tx + 304].forEach(x => { ctx.beginPath(); ctx.arc(x, ty + 56, 8, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = tok('--bay'); ctx.font = '700 15px ' + tok('--f-display'); ctx.textAlign = 'center';
+  const nk = nextTruck();
+  ctx.fillText(S.truckAnim > 0 ? '출고 중 · ' + S.truckLoad + '상자' : (nk != null ? '다음 출발 ' + fmt(nk) : '근무 중 출발 없음'), tx + 135, ty + 32);
+  // pile
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = tok('--muted'); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(PILE.x, PILE.y, PILE.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = tok('--muted'); ctx.font = '600 12px ' + tok('--f-body'); ctx.textAlign = 'center';
+  ctx.fillText('상자 무더기 · ' + pileCount() + '/' + cfg.pile, PILE.x, PILE.y + PILE.r + 18);
+  if (S.running) ctx.fillText('다음 재생성 ' + fmt(S.nextRespawn), PILE.x, PILE.y + PILE.r + 34);
+  // shelves
+  const near = S.running ? nearestSlot() : null;
+  for (const sh of S.shelves) {
+    ctx.fillStyle = tok('--shelf'); ctx.fillRect(sh.x, sh.y, sh.w, sh.h);
+    ctx.fillStyle = tok(DEST[sh.dest].col); ctx.fillRect(sh.x, sh.y, sh.w, 26);
+    ctx.fillStyle = '#fff'; ctx.font = '700 14px ' + tok('--f-body'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(DEST[sh.dest].name, sh.x + sh.w / 2, sh.y + 13);
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = tok('--muted'); ctx.font = '500 11px ' + tok('--f-body');
+    ctx.fillText(DEST[sh.dest].tag, sh.x + sh.w / 2, sh.y + sh.h + 16);
+  }
+  for (const s of S.slots) {
+    ctx.fillStyle = tok('--slot'); ctx.fillRect(s.x, s.y, s.w, s.h);
+    const full = s.boxes.length >= cfg.cap;
+    ctx.fillStyle = tok('--muted'); ctx.font = '500 10.5px ' + tok('--f-body'); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(SIZE[s.size].name, s.x + 5, s.y + 4);
+    ctx.textAlign = 'right'; ctx.font = '500 10.5px ' + tok('--f-mono');
+    ctx.fillStyle = full ? tok('--warn') : tok('--muted');
+    ctx.fillText(s.boxes.length + '/' + cfg.cap, s.x + s.w - 5, s.y + 4);
+    ctx.textBaseline = 'alphabetic';
+    s.boxes.forEach((b, i) => {
+      const [x, y] = slotPos(s, i);
+      drawBox(x, y, b, { mark: b.judged === 'wrongDest' ? '--bad' : b.judged === 'wrongSize' ? '--warn' : null });
+    });
+    if (s === near) { ctx.lineWidth = 3; ctx.strokeStyle = full && S.held ? tok('--warn') : tok('--focus'); ctx.strokeRect(s.x - 1.5, s.y - 1.5, s.w + 3, s.h + 3); }
+  }
+  // loose boxes
+  let hlBox = null;
+  if (S.running && !S.held) {
+    let bd = REACH_BOX;
+    for (const b of S.boxes) if ((b.state === 'pile' || b.state === 'floor')) { const d = Math.hypot(b.x - S.player.x, b.y - S.player.y); if (d <= bd) { bd = d; hlBox = b; } }
+  }
+  for (const b of S.boxes) if (b.state === 'pile' || b.state === 'floor') drawBox(b.x, b.y, b, { hl: b === hlBox });
+  // player
+  const P = S.player;
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(P.x, P.y + 10, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = tok('--worker'); ctx.beginPath(); ctx.arc(P.x, P.y, PLAYER_R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = tok('--tape'); ctx.beginPath(); ctx.arc(P.x + P.fx * 8, P.y + P.fy * 8, 4.5, 0, Math.PI * 2); ctx.fill();
+  if (S.held) drawBox(P.x, P.y - 28, S.held);
+  if (S.target) { ctx.strokeStyle = tok('--focus'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(S.target[0], S.target[1], 6, 0, Math.PI * 2); ctx.stroke(); }
+  // popups
+  for (const p of S.popups) {
+    const a = Math.min(1, p.life / .4), y = p.y - (1.8 - p.life) * 18;
+    ctx.globalAlpha = a; ctx.font = '700 13px ' + tok('--f-body'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(p.text).width + 16;
+    const bg = p.kind === 'ok' ? tok('--good') : p.kind === 'bad' ? tok('--bad') : p.kind === 'warn' ? tok('--warn') : tok('--ink');
+    ctx.fillStyle = bg; roundRect(p.x - w / 2, y - 12, w, 24, 4); ctx.fill();
+    ctx.fillStyle = p.kind === 'warn' ? '#1d1700' : p.kind === 'info' ? tok('--bg') : '#fff';
+    ctx.fillText(p.text, p.x, y + 1);
+    ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
+  }
+}
+function nextTruck() {
+  if (!S) return null;
+  const ks = trucksInShift(cfg.start, cfg.trucks).filter(k => k > S.t);
+  return ks.length ? ks[0] : null;
+}
+
+/* ---------- HUD / overlay ---------- */
+function pendingPenalty() { return S.slots.reduce((a, s) => a + s.boxes.filter(b => b.judged === 'wrongDest').reduce((x, b) => x + penaltyOf(b), 0), 0); }
+function price(b) { return cfg.p4 ? Math.round(cfg.p * FARE_A[b.dest] * FARE_B[b.size]) : cfg.p; }
+function penaltyOf(b) {
+  if (!cfg.p4 || !cfg.p) return cfg.d;
+  let mx = 0; for (let j = 0; j < cfg.N; j++) mx = Math.max(mx, Math.round(cfg.p * FARE_A[j] * FARE_B[b.size]));
+  return Math.round(mx * cfg.d / cfg.p);
+}
+function halfOf(b) { return Math.floor(price(b) * cfg.half / 100); }
+function slowK() { return S.held && cfg.p4 ? 1 - SLOW[S.held.size] : 1; }
+function hud() {
+  if (!S) return;
+  $('hClock').textContent = fmt(S.t);
+  const left = Math.max(0, S.tEnd - S.t);
+  $('hLeft').textContent = Math.floor(left / 60) + ':' + pad2(Math.floor(left % 60));
+  const nk = nextTruck();
+  $('hTruck').textContent = nk != null ? fmt(nk) : '없음';
+  $('hOk').textContent = S.okCount;
+  const pp = pendingPenalty();
+  $('hPend').textContent = pp ? '−' + won(pp) : '0'; $('hPend').className = 'v' + (pp ? ' bad' : '');
+  const pay = S.money - S.penalty;
+  $('hPay').textContent = won(pay); $('hPay').className = 'v' + (pay < 0 ? ' bad' : pay > 0 ? ' good' : '');
+}
+function updateHeld() {
+  const el = $('held');
+  if (!S || !S.held) { el.textContent = '손: 비어 있음'; return; }
+  const b = S.held;
+  el.innerHTML = '손: <span class="sw" style="background:var(' + DEST[b.dest].col + ')"></span> <strong>' + DEST[b.dest].name + '</strong> · ' + SIZE[b.size].name;
+}
+const ov = $('ov');
+function hideOverlay() { ov.hidden = true; ov.innerHTML = ''; }
+function showStart() {
+  const ts = trucksInShift(cfg.start, cfg.trucks);
+  ov.hidden = false;
+  ov.innerHTML = '<div class="card"><div class="eyebrow">일당직 · 8시간</div><h3>' + fmt(cfg.start * 60) + ' 출근</h3>' +
+    '<p>행선지는 색(' + DEST.slice(0, cfg.N).map(d => d.name).join(', ') + '), 크기는 상자 모양으로 구분합니다. 맞는 선반의 맞는 칸에 쌓을 때마다 +' + (cfg.p4 ? '운임(행선지·크기별)' : won(cfg.p)) + ', 틀린 선반에 둔 채 트럭이 떠나면 감액, 크기만 틀리면 출고 때 반값입니다.</p>' +
+    (cfg.p4 ? '<div class="notice">P4 확장: ' + DEST.slice(0, cfg.N).map((d, j) => d.name + ' ' + won(Math.round(cfg.p * FARE_A[j])) + '/' + won(Math.round(cfg.p * FARE_A[j] * FARE_B.L))).join(' · ') + ' (작은/큰). 큰 상자를 들면 30% 느려집니다.</div>' : '') +
+    (ts.length ? '<div class="notice">근무 중 트럭 출발: <strong>' + ts.map(fmt).join(', ') + '</strong>. 출발 전에 틀린 상자를 옮기면 손해가 없습니다.</div>'
+               : '<div class="notice">이 시간대에는 근무 중 트럭이 출발하지 않습니다. 퇴근 후 첫 트럭 결과를 알림으로 정산합니다 (07-8 안 A).</div>') +
+    '<div class="row"><button type="button" class="btn" id="go">출근하기</button><span class="eyebrow">E / Space로 들기·놓기</span></div></div>';
+  $('go').addEventListener('click', start);
+  $('go').focus({ preventScroll: true });
+}
+function showPause() {
+  ov.hidden = false;
+  ov.innerHTML = '<div class="card"><h3>일시정지</h3><p>근무 시간이 멈춰 있습니다.</p><div class="row"><button type="button" class="btn" id="resume">계속하기</button></div></div>';
+  $('resume').addEventListener('click', togglePause);
+}
+function showResult(early, worked, after, day) {
+  const rows = [];
+  rows.push(['정상 배송 ' + S.okCount + '개', '+' + won(S.money - S.halfPaid)]);
+  rows.push(['근무 중 트럭 오배송 ' + S.wdShipped + '개', S.penalty ? '−' + won(S.penalty) : '0']);
+  rows.push(['크기 틀린 채 출고 ' + S.wsShipped + '개 (반값)', S.halfPaid ? '+' + won(S.halfPaid) : '0']);
+  if (after) rows.push([fmt(after.k) + ' 트럭 오배송 ' + after.wd + '개 (퇴근 후)', (after.pen ? '−' + won(after.pen) : '0') + (after.half ? ' / +' + won(after.half) : '')]);
+  const acc = S.judged ? Math.round(S.judgedOk / S.judged * 100) : 0;
+  ov.hidden = false;
+  ov.innerHTML = '<div class="card"><div class="eyebrow">' + (early ? '중간 퇴근 · 07-7' : '8시간 근무 완료') + '</div>' +
+    '<h3>일당 ' + won(day) + '원</h3><p>' + fmt(S.tStart) + ' – ' + fmt(S.t) + ' · ' + Math.floor(worked / 60) + '시간 ' + pad2(worked % 60) + '분 · 첫 판정 정확도 ' + acc + '% · 상자를 기다린 시간 ' + Math.round(S.wait) + '분</p>' +
+    '<table>' + rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') +
+    '<tr class="total"><td>일당</td><td>' + won(day) + '</td></tr></table>' +
+    (after ? '<div class="notice"><strong>알림 · ' + fmt(after.k) + ' 트럭</strong><br>선반에 남은 ' + after.n + '상자가 실렸습니다. 오배송 ' + after.wd + '개' + (after.pen ? ', −' + won(after.pen) + ' 차감' : '') + (after.ws ? ', 크기 틀림 ' + after.ws + '개는 0원' : '') + '.</div>' : '') +
+    '<div class="row"><button type="button" class="btn" id="again">다시 출근하기</button></div></div>';
+  $('again').addEventListener('click', () => { newRun(); showStart(); });
+  $('again').focus({ preventScroll: true });
+}
+function start() {
+  newRun();
+  S.running = true; hideOverlay(); updateHeld();
+  $('bPause').textContent = '일시정지';
+  cv.focus && cv.focus();
+}
+
+/* ---------- params & sim ---------- */
+function syncLabels() {
+  const c = readCfg();
+  $('vP').textContent = won(c.p) + '원'; $('vD').textContent = won(c.d) + '원';
+  $('vPile').textContent = c.pile + '개'; $('vResp').textContent = c.respawn + '분'; $('vMove').textContent = '초당 ' + c.move + '칸';
+  $('vSpeed').textContent = c.secPerHour + '초';
+  $('vHalf').textContent = c.half + '%'; $('vCap').textContent = '칸마다 ' + c.cap + '개';
+  $('vStart').textContent = ''; $('vN').textContent = ''; $('vK').textContent = ''; $('vTrucks').textContent = '';
+}
+function updatePending() {
+  const c = readCfg(), el = $('pending');
+  const same = cfg && Object.keys(c).every(k => c[k] === cfg[k]);
+  el.textContent = same ? '현재 근무에 적용된 값과 같습니다.' : '바뀐 값은 다음 출근부터 적용됩니다.';
+  el.classList.toggle('on', !same);
+}
+inputs.forEach(id => $(id).addEventListener('input', () => {
+  if (id === 'pTrucks') fillStartOptions();
+  syncLabels(); updatePending(); runSim(); runBalance();
+  if (S && !S.running && !S.over) { newRun(); showStart(); }
+  saveCfg();
+}));
+function runSim() {
+  const c = readCfg(), N = c.N, K = c.K, p = c.p, d = c.d, trials = 20000;
+  const hr = c.half / 100;
+  const f = { all: p, sizeOnly: p / N - d * (N - 1) / N, none: p / (N * K) + (K - 1) / (N * K) * p * hr - d * (N - 1) / N };
+  const sim = { all: 0, sizeOnly: 0, none: 0 };
+  for (let i = 0; i < trials; i++) {
+    const bd = randInt(N), bs = randInt(K);
+    sim.all += p;
+    const gd = randInt(N); sim.sizeOnly += gd === bd ? p : -d;
+    const gd2 = randInt(N), gs2 = randInt(K); sim.none += gd2 !== bd ? -d : (gs2 === bs ? p : p * hr);
+  }
+  for (const k in sim) sim[k] /= trials;
+  const max = Math.max(p, d, 1);
+  const row = (nm, formula, fv, sv) => {
+    const w = Math.min(50, Math.abs(fv) / max * 50);
+    const col = fv > 0.5 ? 'var(--good)' : fv < -0.5 ? 'var(--bad)' : 'var(--muted)';
+    const bar = fv >= 0 ? '<i style="left:50%;width:' + w + '%;background:' + col + '"></i>' : '<i style="right:50%;width:' + w + '%;background:' + col + '"></i>';
+    return '<div class="simrow"><span class="nm">' + nm + '</span><span class="num">' + won(fv) + ' / ' + won(sv) + '</span>' +
+      '<span class="f">' + formula + '</span><div class="bar">' + bar + '<b></b></div></div>';
+  };
+  const need = N > 1 ? p / (N - 1) : Infinity;
+  $('sim').innerHTML =
+    '<div class="simrow"><span class="f" style="grid-column:auto">전략</span><span class="f" style="grid-column:auto;text-align:right">공식 / 시뮬레이션</span></div>' +
+    row('모두 확인', 'p', f.all, sim.all) +
+    row('크기만 맞추고 행선지는 대충 (기준 식)', 'p/N − d·(N−1)/N', f.sizeOnly, sim.sizeOnly) +
+    row('아무것도 확인 안 함 (참고 식)', 'p/(N×K) + (K−1)/(N×K)×p×' + hr + ' − d·(N−1)/N', f.none, sim.none) +
+    (c.p4 ? '<p class="f" style="margin:0">P4를 켜면 p 자리에 같은 크기의 최고 운임이 들어갑니다. 감액도 같은 비율로 커져서 결과는 같습니다.</p>' : '') +
+    '<div class="verdict">감액 기준 d ≥ p ÷ (N−1) = <strong>' + won(need) + '</strong><br>' +
+    (d >= need ? '현재 d=' + won(d) + '이면 행선지를 확인하지 않는 플레이는 돈이 되지 않습니다.' : '현재 d=' + won(d) + '은 기준보다 낮아서, 행선지를 보지 않고 놓아도 상자당 평균 +' + won(f.sizeOnly) + '을 법니다.') + '</div>';
+}
+$('bSim').addEventListener('click', runSim);
+function pathLen(a, b, shelves) {
+  const R = PLAYER_R;
+  const hit = (p, q, r) => {
+    const x0 = r.x - R + .5, y0 = r.y - R + .5, x1 = r.x + r.w + R - .5, y1 = r.y + r.h + R - .5;
+    const dx = q[0] - p[0], dy = q[1] - p[1]; let t0 = 0, t1 = 1;
+    for (const [pp, qq] of [[-dx, p[0] - x0], [dx, x1 - p[0]], [-dy, p[1] - y0], [dy, y1 - p[1]]]) {
+      if (pp === 0) { if (qq < 0) return false; } else { const t = qq / pp; if (pp < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t); if (t0 > t1) return false; }
+    }
+    return true;
+  };
+  const nodes = [a, b];
+  for (const r of shelves) for (const [cx, cy] of [[r.x - R - 1, r.y - R - 1], [r.x + r.w + R + 1, r.y - R - 1], [r.x - R - 1, r.y + r.h + R + 1], [r.x + r.w + R + 1, r.y + r.h + R + 1]]) nodes.push([cx, cy]);
+  const dist = nodes.map(() => Infinity), done = nodes.map(() => false); dist[0] = 0;
+  for (;;) {
+    let i = -1; for (let k = 0; k < nodes.length; k++) if (!done[k] && (i < 0 || dist[k] < dist[i])) i = k;
+    if (i < 0 || dist[i] === Infinity) return Infinity;
+    if (i === 1) return dist[1];
+    done[i] = true;
+    for (let j = 0; j < nodes.length; j++) if (!done[j] && !shelves.some(r => hit(nodes[i], nodes[j], r))) {
+      const d = dist[i] + Math.hypot(nodes[i][0] - nodes[j][0], nodes[i][1] - nodes[j][1]); if (d < dist[j]) dist[j] = d;
+    }
+  }
+}
+function runBalance() {
+  const c = readCfg();
+  const { shelves, slots } = buildShelves(c.N, c.K);
+  const v = c.move * GRID;
+  // 무더기 중심 → 각 칸 왼쪽 앞까지, 선반을 돌아가는 길을 포함한 최단 경로. 모든 칸에 상자가 고르게 온다고 봅니다.
+  let sumT = 0, sumP = 0, sumL = 0, best = 0;
+  for (const s of slots) {
+    const L = pathLen([PILE.x, PILE.y], [s.x - 5 - PLAYER_R - 3, s.y + s.h / 2], shelves);
+    const sl = c.p4 ? SLOW[s.size] : 0;
+    const T = L / (v * (1 - sl)) + L / v + 1;
+    const pr = c.p4 ? Math.round(c.p * FARE_A[s.dest] * FARE_B[s.size]) : c.p;
+    sumT += T; sumP += pr; sumL += L; best = Math.max(best, pr / T);
+  }
+  const tripSec = sumT / slots.length, avgP = sumP / slots.length, dist = sumL / slots.length;
+  const tripMin = tripSec * 60 / c.secPerHour;                // 게임 분
+  const handle = 60 / tripMin;                                // 시간당 처리 가능 상자
+  const supply = c.pile * 60 / c.respawn;                     // 시간당 최대 공급 상자
+  const ratio = supply / handle;
+  const balanced = Math.round(c.pile * tripMin / 5) * 5;
+  const shiftSec = 8 * c.secPerHour;
+  const nT = trucksInShift(c.start, c.trucks).length;
+  const byWalk = Math.floor(shiftSec / tripSec), byCap = c.cap * slots.length * (nT + 1);
+  const M = Math.min(byWalk, byCap, Math.floor(supply * 8));
+  const maxDay = Math.round(M * avgP);
+  let verdict, col;
+  if (ratio > 1.25) { verdict = '상자가 남습니다. 수입은 이동 속도가 정하고, 재생성 간격을 줄여도 일당이 오르지 않습니다.'; col = 'var(--warn)'; }
+  else if (ratio < 0.8) { verdict = '상자를 기다리는 시간이 생깁니다. 수입은 재생성 간격이 정하고, 빨리 움직여도 일당이 오르지 않습니다.'; col = 'var(--bad)'; }
+  else { verdict = '균형 구간입니다. 손을 쉬지 않으면서 무더기도 쌓이지 않습니다.'; col = 'var(--good)'; }
+  const w = Math.min(100, ratio / 2 * 100);
+  const limit = M === byCap ? '칸 용량에서 막힘 (칸 ' + slots.length + '개 × ' + c.cap + ' × 트럭 ' + nT + '회+1)' : M === byWalk ? '걷는 속도가 정함' : '공급량이 정함';
+  $('bal').innerHTML =
+    '<div class="simrow"><span class="nm">상자 1개 평균 왕복</span><span class="num">' + tripSec.toFixed(1) + '초 · 게임 ' + Math.round(tripMin) + '분</span><span class="f">무더기↔칸 평균 ' + Math.round(dist / GRID * 10) / 10 + '칸 (선반을 돌아가는 길 포함)' + (c.p4 ? ' · 무게 감속 적용' : '') + ' + 들기·놓기 1초</span></div>' +
+    '<div class="simrow"><span class="nm">처리량 (게임 1시간)</span><span class="num">' + handle.toFixed(1) + '개</span></div>' +
+    '<div class="simrow"><span class="nm">최대 공급량 (게임 1시간)</span><span class="num">' + supply.toFixed(1) + '개</span><span class="f">무더기 ' + c.pile + '개 ÷ ' + c.respawn + '분</span></div>' +
+    '<div class="simrow"><span class="nm">공급 ÷ 처리</span><span class="num">' + ratio.toFixed(2) + '</span><div class="bar"><i style="left:0;width:' + w + '%;background:' + col + '"></i><b></b></div><span class="f">가운데 선 = 1.0 (균형)</span></div>' +
+    '<div class="verdict">' + verdict + '<br>균형 재생성 간격 ≈ 무더기 크기 × 왕복 시간 = <strong>' + balanced + '분</strong></div>' +
+    '<div class="simrow"><span class="nm">하루 최대 상자 수 M</span><span class="num">' + M + '개</span><span class="f">' + limit + '</span></div>' +
+    '<div class="verdict">하루 최대 일당 ≈ M × 평균 ' + (c.p4 ? '운임 ' : '단가 ') + won(avgP) + ' = <strong>' + won(maxDay) + '원</strong> (PRD 목표 약 700)</div>';
+}
+
+/* ---------- storage (per-viewer convenience) ---------- */
+let history = [];
+function saveHist() { try { localStorage.setItem('dw-hist', JSON.stringify(history)); } catch (e) {} }
+function loadHist() { try { history = JSON.parse(localStorage.getItem('dw-hist') || '[]') || []; } catch (e) { history = []; } }
+function saveCfg() { try { localStorage.setItem('dw-cfg2', JSON.stringify(readCfg())); } catch (e) {} }
+function loadCfg() {
+  try {
+    const c = JSON.parse(localStorage.getItem('dw-cfg2') || 'null'); if (!c) return;
+    const map = { pP: 'p', pD: 'd', pN: 'N', pK: 'K', pPile: 'pile', pResp: 'respawn', pTrucks: 'trucks', pSpeed: 'secPerHour', pMove: 'move', pHalf: 'half', pCap: 'cap' };
+    for (const id in map) if (c[map[id]] != null) $(id).value = c[map[id]];
+    $('pP4').checked = !!c.p4;
+    fillStartOptions(); if (c.start != null) $('pStart').value = c.start;
+  } catch (e) {}
+}
+function renderHist() {
+  const el = $('hist');
+  if (!history.length) { el.innerHTML = '<p class="empty">아직 기록이 없습니다. 출근해서 한 번 일해 보세요.</p>'; return; }
+  el.innerHTML = '<table class="hist"><thead><tr><th>출근</th><th>근무</th><th>정상</th><th>오배송</th><th>정확도</th><th>일당</th></tr></thead><tbody>' +
+    history.map(r => '<tr><td>' + r.start + ' <span style="color:var(--muted)">' + r.set + '</span></td><td>' + Math.floor(r.worked / 60) + ':' + pad2(r.worked % 60) + '</td><td>' + r.ok + '</td><td>' + r.wd + '</td><td>' + r.acc + '%</td><td>' + won(r.day) + '</td></tr>').join('') + '</tbody></table>';
+}
+
+/* ---------- boot ---------- */
+fillStartOptions();
+loadCfg();
+syncLabels();
+loadHist(); renderHist();
+newRun(); showStart(); runSim(); runBalance();
+requestAnimationFrame(frame);
+window.__dw = { get S() { return S; }, act, start, endShift };
+})();
+</script>
+</html>
