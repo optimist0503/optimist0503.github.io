@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
-/* Layout: 물류센터 작업판. 왼쪽 열은 근무 현황판 + 현장(캔버스) + 조작, 오른쪽 열은 조절 변수 · 05 감액 검증 · 근무 기록. 좁으면 한 열. */
+/* Layout: 물류센터 작업판. 왼쪽 열은 근무 현황판 + 현장(캔버스) + 조작, 오른쪽 열은 조절 변수 · 05 패널티 검증 · 근무 기록. 좁으면 한 열. */
 :root {
   --bg: #e9ecee;
   --panel: #f6f7f8;
@@ -153,7 +153,7 @@ footer { color: var(--muted); font-size: 12px; }
       <h1>도원 택배 상하차</h1>
     </div>
     <span class="tape" aria-hidden="true">tape</span>
-    <p>상자의 행선지(색)와 크기를 보고 맞는 선반의 맞는 칸에 쌓는 8시간 일당직입니다. 트럭은 06:00과 18:00에 선반을 비우고, 그때 오배송이 감액됩니다.</p>
+    <p>상자의 행선지(색)와 크기를 보고 맞는 선반의 맞는 칸에 쌓는 8시간 일당직입니다. 트럭은 06:00과 18:00에 선반을 비우고, 그때 오배송 패널티가 붙습니다.</p>
   </header>
 
   <div class="grid">
@@ -163,7 +163,7 @@ footer { color: var(--muted); font-size: 12px; }
         <div><div class="k">남은 근무</div><div class="v" id="hLeft">8:00</div></div>
         <div><div class="k">다음 트럭</div><div class="v" id="hTruck">18:00</div></div>
         <div><div class="k">정상 배송</div><div class="v" id="hOk">0</div></div>
-        <div><div class="k">출고 예정 감액</div><div class="v" id="hPend">0</div></div>
+        <div><div class="k">출고 예정 패널티</div><div class="v" id="hPend">0</div></div>
         <div><div class="k">현재 일당</div><div class="v" id="hPay">0</div></div>
       </div>
 
@@ -199,8 +199,8 @@ footer { color: var(--muted); font-size: 12px; }
         <h2 id="tRules" class="eyebrow" style="margin:6px 0 6px">이 데모가 따르는 PRD 규칙</h2>
         <div class="rules">
           <div><span class="id">R8 · 07-1 · 07-4</span><strong>맞는 칸에 놓으면 즉시 +보수</strong>행선지와 크기가 모두 맞으면 보수를 받고 상자가 고정됩니다. 다시 들 수 없습니다.</div>
-          <div><span class="id">R8 예외</span><strong>행선지가 틀리면 빨강</strong>보수 없음. 트럭 출발 전에 옮기면 손해 없음, 남아 있으면 출발 때 감액이 확정됩니다.</div>
-          <div><span class="id">R8 예외</span><strong>크기만 틀리면 노랑 · 반값</strong>감액은 없고, 트럭이 출발할 때 단가의 절반을 받습니다. 출발 전에 맞는 칸으로 옮기면 전액을 받습니다.</div>
+          <div><span class="id">R8 예외</span><strong>행선지가 틀리면 빨강</strong>보수 없음. 트럭 출발 전에 옮기면 손해 없음, 남아 있으면 출발 때 패널티가 확정됩니다.</div>
+          <div><span class="id">R8 예외</span><strong>크기만 틀리면 노랑 · 반값</strong>패널티는 없고, 트럭이 출발할 때 단가의 절반을 받습니다. 출발 전에 맞는 칸으로 옮기면 전액을 받습니다.</div>
           <div><span class="id">R8 예외</span><strong>칸이 가득 차면 놓을 수 없음</strong>다음 트럭이 칸을 비울 때까지 바닥이나 무더기에 둡니다. 바닥은 판정하지 않습니다.</div>
           <div><span class="id">R9 · 07-3</span><strong>트럭 출발 = 선반 비우기</strong>손에 든 상자는 실리지 않습니다. 출발 직전의 마지막 점검이 핵심입니다.</div>
           <div><span class="id">07-7 · 07-8</span><strong>8시간 후 퇴근</strong>든 상자는 무더기로 돌아갑니다. 근무 뒤 첫 트럭의 결과는 알림으로 정산합니다.</div>
@@ -216,10 +216,10 @@ footer { color: var(--muted); font-size: 12px; }
           <div class="param"><label for="pStart">출근 시각</label><span class="val" id="vStart"></span>
             <select id="pStart"></select><span class="hint">트럭 시각이 근무 시간에 들어가는 시간대에 표시가 붙습니다 (07-8 안 B, 후속 검토용).</span></div>
           <div class="param"><label for="pP">상자당 단가 p</label><output id="vP"></output><input type="range" id="pP" min="5" max="100" step="1" value="25"><span class="hint">하루 최대 약 700에 맞춘 값입니다 (PRD 05-3). P4를 켜면 기준 운임 p₀로 쓰이고, PRD 값은 17입니다.</span></div>
-          <div class="param"><label for="pD">오배송 감액 d</label><output id="vD"></output><input type="range" id="pD" min="0" max="100" step="1" value="25"></div>
+          <div class="param"><label for="pD">오배송 패널티 d</label><output id="vD"></output><input type="range" id="pD" min="0" max="100" step="1" value="25"></div>
           <div class="param"><label for="pHalf">크기 틀림 지급률</label><output id="vHalf"></output><input type="range" id="pHalf" min="0" max="75" step="5" value="50"></div>
           <div class="param"><label for="pCap">칸 용량</label><output id="vCap"></output><input type="range" id="pCap" min="3" max="14" step="1" value="10"></div>
-          <div class="param"><label for="pP4"><input type="checkbox" id="pP4"> P4 확장 켜기</label><span class="val"></span><span class="hint">운임 차등(블리스베이 1.7배 · 큰 상자 1.2배)과 무게 감속(작은 −5% · 큰 −30%)을 적용합니다. 오배송 감액은 같은 크기의 최고 운임이 됩니다. 차하야 계수는 PRD에 없어 데모 임시값 2.0입니다.</span></div>
+          <div class="param"><label for="pP4"><input type="checkbox" id="pP4"> P4 확장 켜기</label><span class="val"></span><span class="hint">운임 차등(블리스베이 1.7배 · 큰 상자 1.2배)과 무게 감속(작은 −5% · 큰 −30%)을 적용합니다. 오배송 패널티는 같은 크기의 최고 운임이 됩니다. 차하야 계수는 PRD에 없어 데모 임시값 2.0입니다.</span></div>
           <div class="param"><label for="pN">행선지 수 N</label><span class="val" id="vN"></span>
             <select id="pN"><option value="2" selected>2곳 · 도원, 블리스베이</option><option value="3">3곳 · 차하야 추가 (R7)</option></select></div>
           <div class="param"><label for="pK">선반 칸 종류 K</label><span class="val" id="vK"></span>
@@ -235,7 +235,7 @@ footer { color: var(--muted); font-size: 12px; }
       </section>
 
       <section class="panel" aria-labelledby="tSim">
-        <h2 id="tSim">05 감액 검증</h2>
+        <h2 id="tSim">05 패널티 검증</h2>
         <p class="sub">확인을 건너뛰는 플레이어가 상자 1개당 평균 얼마를 버는지, 공식과 무작위 2만 회 시뮬레이션으로 비교합니다.</p>
         <div class="sim" id="sim"></div>
         <div class="row" style="margin-top:10px"><button type="button" class="btn ghost" id="bSim">다시 돌리기</button></div>
@@ -420,13 +420,13 @@ function placeInSlot(b, slot) {
   const cx = slot.x + slot.w / 2, cy = slot.y + 12;
   if (b.dest === slot.dest && b.size === slot.size) {
     b.judged = 'ok'; b.fixed = true; S.money += price(b); S.okCount++; S.judgedOk++;
-    popup(cx, cy, '정상 배송 +' + won(price(b)), 'ok');
+    popup(cx, cy, '정상 배송 +' + won(price(b)) + '뮤', 'ok');
   } else if (b.dest !== slot.dest) {
     b.judged = 'wrongDest';
-    popup(cx, cy, '행선지 틀림 · 출고 때 −' + won(penaltyOf(b)), 'bad');
+    popup(cx, cy, '행선지 틀림 · 출고 때 −' + won(penaltyOf(b)) + '뮤', 'bad');
   } else {
     b.judged = 'wrongSize';
-    popup(cx, cy, '크기 틀림 · 출고 때 +' + won(halfOf(b)), 'warn');
+    popup(cx, cy, '크기 틀림 · 출고 때 +' + won(halfOf(b)) + '뮤', 'warn');
   }
   updateHeld();
 }
@@ -452,7 +452,7 @@ function depart(k) {
   S.penalty += pen; S.wdShipped += wd; S.wsShipped += ws; S.okShipped += ok;
   S.departures.push({ k, ok, wd, ws, pen });
   S.truckAnim = 2.4; S.truckLoad = ok + wd + ws;
-  popup(745, 54, fmt(k) + ' 트럭 출발 · ' + (ok + wd + ws) + '상자' + (wd ? ' · 오배송 −' + won(pen) : '') + (hp ? ' · 반값 +' + won(hp) : ''), wd ? 'bad' : 'ok');
+  popup(745, 54, fmt(k) + ' 트럭 출발 · ' + (ok + wd + ws) + '상자' + (wd ? ' · 오배송 −' + won(pen) + '뮤' : '') + (hp ? ' · 반값 +' + won(hp) + '뮤' : ''), wd ? 'bad' : 'ok');
 }
 function endShift(early) {
   if (!S.running) return;
@@ -715,8 +715,8 @@ function showStart() {
   const ts = trucksInShift(cfg.start, cfg.trucks);
   ov.hidden = false;
   ov.innerHTML = '<div class="card"><div class="eyebrow">일당직 · 8시간</div><h3>' + fmt(cfg.start * 60) + ' 출근</h3>' +
-    '<p>행선지는 색(' + DEST.slice(0, cfg.N).map(d => d.name).join(', ') + '), 크기는 상자 모양으로 구분합니다. 맞는 선반의 맞는 칸에 쌓을 때마다 +' + (cfg.p4 ? '운임(행선지·크기별)' : won(cfg.p)) + ', 틀린 선반에 둔 채 트럭이 떠나면 감액, 크기만 틀리면 출고 때 반값입니다.</p>' +
-    (cfg.p4 ? '<div class="notice">P4 확장: ' + DEST.slice(0, cfg.N).map((d, j) => d.name + ' ' + won(Math.round(cfg.p * FARE_A[j])) + '/' + won(Math.round(cfg.p * FARE_A[j] * FARE_B.L))).join(' · ') + ' (작은/큰). 큰 상자를 들면 30% 느려집니다.</div>' : '') +
+    '<p>행선지는 색(' + DEST.slice(0, cfg.N).map(d => d.name).join(', ') + '), 크기는 상자 모양으로 구분합니다. 맞는 선반의 맞는 칸에 쌓을 때마다 +' + (cfg.p4 ? '운임(행선지·크기별)' : won(cfg.p) + '뮤') + ', 틀린 선반에 둔 채 트럭이 떠나면 패널티, 크기만 틀리면 출고 때 반값입니다.</p>' +
+    (cfg.p4 ? '<div class="notice">P4 확장: ' + DEST.slice(0, cfg.N).map((d, j) => d.name + ' ' + won(Math.round(cfg.p * FARE_A[j])) + '/' + won(Math.round(cfg.p * FARE_A[j] * FARE_B.L)) + '뮤').join(' · ') + ' (작은/큰). 큰 상자를 들면 30% 느려집니다.</div>' : '') +
     (ts.length ? '<div class="notice">근무 중 트럭 출발: <strong>' + ts.map(fmt).join(', ') + '</strong>. 출발 전에 틀린 상자를 옮기면 손해가 없습니다.</div>'
                : '<div class="notice">이 시간대에는 근무 중 트럭이 출발하지 않습니다. 퇴근 후 첫 트럭 결과를 알림으로 정산합니다 (07-8 안 A).</div>') +
     '<div class="row"><button type="button" class="btn" id="go">출근하기</button><span class="eyebrow">E / Space로 들기·놓기</span></div></div>';
@@ -737,10 +737,10 @@ function showResult(early, worked, after, day) {
   const acc = S.judged ? Math.round(S.judgedOk / S.judged * 100) : 0;
   ov.hidden = false;
   ov.innerHTML = '<div class="card"><div class="eyebrow">' + (early ? '중간 퇴근 · 07-7' : '8시간 근무 완료') + '</div>' +
-    '<h3>일당 ' + won(day) + '원</h3><p>' + fmt(S.tStart) + ' – ' + fmt(S.t) + ' · ' + Math.floor(worked / 60) + '시간 ' + pad2(worked % 60) + '분 · 첫 판정 정확도 ' + acc + '% · 상자를 기다린 시간 ' + Math.round(S.wait) + '분</p>' +
+    '<h3>일당 ' + won(day) + '뮤</h3><p>' + fmt(S.tStart) + ' – ' + fmt(S.t) + ' · ' + Math.floor(worked / 60) + '시간 ' + pad2(worked % 60) + '분 · 첫 판정 정확도 ' + acc + '% · 상자를 기다린 시간 ' + Math.round(S.wait) + '분</p>' +
     '<table>' + rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') +
     '<tr class="total"><td>일당</td><td>' + won(day) + '</td></tr></table>' +
-    (after ? '<div class="notice"><strong>알림 · ' + fmt(after.k) + ' 트럭</strong><br>선반에 남은 ' + after.n + '상자가 실렸습니다. 오배송 ' + after.wd + '개' + (after.pen ? ', −' + won(after.pen) + ' 차감' : '') + (after.ws ? ', 크기 틀림 ' + after.ws + '개는 0원' : '') + '.</div>' : '') +
+    (after ? '<div class="notice"><strong>알림 · ' + fmt(after.k) + ' 트럭</strong><br>선반에 남은 ' + after.n + '상자가 실렸습니다. 오배송 ' + after.wd + '개' + (after.pen ? ', −' + won(after.pen) + ' 차감' : '') + (after.ws ? ', 크기 틀림 ' + after.ws + '개는 반값 +' + won(after.half) + '뮤' : '') + '.</div>' : '') +
     '<div class="row"><button type="button" class="btn" id="again">다시 출근하기</button></div></div>';
   $('again').addEventListener('click', () => { newRun(); showStart(); });
   $('again').focus({ preventScroll: true });
@@ -755,7 +755,7 @@ function start() {
 /* ---------- params & sim ---------- */
 function syncLabels() {
   const c = readCfg();
-  $('vP').textContent = won(c.p) + '원'; $('vD').textContent = won(c.d) + '원';
+  $('vP').textContent = won(c.p) + '뮤'; $('vD').textContent = won(c.d) + '뮤';
   $('vPile').textContent = c.pile + '개'; $('vResp').textContent = c.respawn + '분'; $('vMove').textContent = '초당 ' + c.move + '칸';
   $('vSpeed').textContent = c.secPerHour + '초';
   $('vHalf').textContent = c.half + '%'; $('vCap').textContent = '칸마다 ' + c.cap + '개';
@@ -799,8 +799,8 @@ function runSim() {
     row('모두 확인', 'p', f.all, sim.all) +
     row('크기만 맞추고 행선지는 대충 (기준 식)', 'p/N − d·(N−1)/N', f.sizeOnly, sim.sizeOnly) +
     row('아무것도 확인 안 함 (참고 식)', 'p/(N×K) + (K−1)/(N×K)×p×' + hr + ' − d·(N−1)/N', f.none, sim.none) +
-    (c.p4 ? '<p class="f" style="margin:0">P4를 켜면 p 자리에 같은 크기의 최고 운임이 들어갑니다. 감액도 같은 비율로 커져서 결과는 같습니다.</p>' : '') +
-    '<div class="verdict">감액 기준 d ≥ p ÷ (N−1) = <strong>' + won(need) + '</strong><br>' +
+    (c.p4 ? '<p class="f" style="margin:0">P4를 켜면 p 자리에 같은 크기의 최고 운임이 들어갑니다. 패널티도 같은 비율로 커져서 결과는 같습니다.</p>' : '') +
+    '<div class="verdict">패널티 기준 d ≥ p ÷ (N−1) = <strong>' + won(need) + '</strong><br>' +
     (d >= need ? '현재 d=' + won(d) + '이면 행선지를 확인하지 않는 플레이는 돈이 되지 않습니다.' : '현재 d=' + won(d) + '은 기준보다 낮아서, 행선지를 보지 않고 놓아도 상자당 평균 +' + won(f.sizeOnly) + '을 법니다.') + '</div>';
 }
 $('bSim').addEventListener('click', runSim);
@@ -864,7 +864,7 @@ function runBalance() {
     '<div class="simrow"><span class="nm">공급 ÷ 처리</span><span class="num">' + ratio.toFixed(2) + '</span><div class="bar"><i style="left:0;width:' + w + '%;background:' + col + '"></i><b></b></div><span class="f">가운데 선 = 1.0 (균형)</span></div>' +
     '<div class="verdict">' + verdict + '<br>균형 재생성 간격 ≈ 무더기 크기 × 왕복 시간 = <strong>' + balanced + '분</strong></div>' +
     '<div class="simrow"><span class="nm">하루 최대 상자 수 M</span><span class="num">' + M + '개</span><span class="f">' + limit + '</span></div>' +
-    '<div class="verdict">하루 최대 일당 ≈ M × 평균 ' + (c.p4 ? '운임 ' : '단가 ') + won(avgP) + ' = <strong>' + won(maxDay) + '원</strong> (PRD 목표 약 700)</div>';
+    '<div class="verdict">하루 최대 일당 ≈ M × 평균 ' + (c.p4 ? '운임 ' : '단가 ') + won(avgP) + ' = <strong>' + won(maxDay) + '뮤</strong> (PRD 목표 약 700뮤)</div>';
 }
 
 /* ---------- storage (per-viewer convenience) ---------- */
